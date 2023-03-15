@@ -33,9 +33,7 @@ pub struct PageHeader {
 
 pub struct Cell {}
 
-impl Cell {
-
-}
+impl Cell {}
 
 pub struct Page {
     pub page_header: PageHeader,
@@ -45,15 +43,23 @@ pub struct Page {
 
 impl Page {
     pub fn new(bytes: &mut IntoIter<u8>) -> Result<Page> {
-        let page_type = PageType::new(bytes.next().unwrap());
+        let page_type = PageType::new(bytes.next().unwrap())?;
         let freeblock = u16::from_be_bytes(bytes.take(2).collect::<Vec<u8>>().try_into().unwrap());
-        let number_cells = u16::from_be_bytes(bytes.take(2).collect::<Vec<u8>>().try_into().unwrap());
-        let content_start_area = u16::from_be_bytes(bytes.take(2).collect::<Vec<u8>>().try_into().unwrap());
-        let number_fragmented_bytes = u8::from_be_bytes(bytes.take(1).collect::<Vec<u8>>().try_into().unwrap());
-        let cell_pointers: Vec<u16> = bytes.take(number_cells as usize * 2).collect::<Vec<u8>>().chunks(2).map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]])).collect();
+        let number_cells =
+            u16::from_be_bytes(bytes.take(2).collect::<Vec<u8>>().try_into().unwrap());
+        let content_start_area =
+            u16::from_be_bytes(bytes.take(2).collect::<Vec<u8>>().try_into().unwrap());
+        let number_fragmented_bytes =
+            u8::from_be_bytes(bytes.take(1).collect::<Vec<u8>>().try_into().unwrap());
+        let cell_pointers: Vec<u16> = bytes
+            .take(number_cells as usize * 2)
+            .collect::<Vec<u8>>()
+            .chunks(2)
+            .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+            .collect();
         Ok(Page {
             page_header: PageHeader {
-                page_type: PageType::TableLeafPage,
+                page_type: page_type,
                 freeblock: freeblock,
                 number_cells: number_cells,
                 content_area_start: content_start_area,
