@@ -1,0 +1,85 @@
+function padTo(s, m) {return  s.padStart(Math.ceil(s.length / m) * m, '0') } 
+
+function h(n) { let a = n.toString(16); return `0x${padTo(a, 2)}`}
+
+function b(n) { let a = n.toString(2); return `0b${padTo(a, 8)}`}
+
+h2a(hex) { return hex.match(/.{1,2}/g).map(b => String.fromCharCode(parseInt(b, 16))).join('') }
+
+function varint (n) {
+    let bits = '';
+    let bytes = padTo((n).toString(16), 2).match(/.{1,2}/g)
+    for(let i = 0; i < 9; i++) {
+        let byte = padTo(parseInt(bytes[i], 16).toString(2), 8)
+        bits += byte.substring(1);
+        if(byte[0] == '0') {   
+            break;
+        }
+        if(i == 8) { throw new Error('not handled 9 byte int')}
+    }
+    return parseInt(bits, 2);
+}
+
+
+
+
+
+0-99: DB header
+    16-17: Page Size (4096)
+0x0064-0x0fff: Page 0 (len: 4096 bytes)
+    0x0064-0x006b: Page Header (len: 8 bytes)
+        0x0064: type (d)
+        0x0065-0x0066   : first freeblock on page 0x0000 (0)
+        0x0067-0x0068   : number of cells on page 0x0003 (3)
+        0x0069-0x006a   : start of content area   0x0ec3 (3779)
+        0x006b          : number of fragmented free bytes within the cell content area 0x00 (0)
+    0x006c-0x0071 : Cell pointer array (number cells x 2 bytes) 0x0f8f (3983) 0x0f3d 0x0ec3
+    0x072-0x0ec2: Unallocated space
+    0x0ec3-0x0f3c: Content Area
+        0x0ec3-0x0f3c: Cell0 (len: 122 bytes)
+            0x0ec3: payload length 0x78 (120) bytes
+            0x0ec4: rowid 0x03 (3) rowid
+            0x0ec5-0x0f3c: payload
+                0x0ec5-0xaaaa: Record header (len: 7 bytes)
+                    0x0ec5: 0x07    (7)   header length
+                    0x0ec6: 0x17    (23)  (5 char string) (type column type)
+                    0x0ec7: 0x1b    (27)  (7 char string) (name column type)
+                    0x0ec8: 0x1b    (27)  (7 char string) (table_name column type)
+                    0x0ec9: 0x01    (1)   (1 byte int) (root_page index)
+                    0x0eca: 0x8147  (199) (93 char string) (sql column type)
+                0x0ecc-0x0f3c: Record body (len: 113 bytes)
+                    0x0ecc-0x0ed0: 0x7461626c65 ("table")
+                    0x0ed1-0x0ed7: 0x6f72616e676573 ("oranges")
+                    0x0ed8-0x0ede: 0x6f72616e676573 ("oranges")
+                    0x0edf       : 0x04 (4) (root_page index)
+                    0x0ee0-0x0f3c:  0x435245415445205441424c45206f72616e6765730a280a09696420696e7465676572207072696d617279206b6579206175746f696e6372656d656e742c0a096e616d6520746578742c0a096465736372697074696f6e20746578740a29
+                        ("CREATE TABLE oranges\n(\n\tid integer primary key autoincrement,\n\tname text,\n\tdescription text\n)")
+        0x0f3d-0x0f3f: Cell1 (len: 82 bytes)
+            0x0f3d: payload length 0x50 (80) bytes
+            0x0f3e: rowid 0x02 (2) rowid
+            0x0f3f-0x0f8e: payload (len: 80 bytes)
+                0x03f-0x0f44: Record header (len: 6 bytes)
+                    0x0f3f: 0x06 (6) header length
+                    0x0f40: 0x17 (23) (5 char string) (type column type)
+                    0x0f41: 0x2b (43) (15 char string) (name column type)
+                    0x0f42: 0x2b (43) (15 char string) (table_name column type)
+                    0x0f43: 0x01 (1) (1 byte int) (root_page index)
+                    0x0f44: 0x59 (89) (38 char string) (sql column type)
+                0x0f45-0x0f8e: Record body (len: 74 bytes)
+                    0x0f45-0x0f4a: 0x7461626c65 ("table")
+                    0x0f4a-0x0f5a: 0x73716c6974655f73657175656e6365 ("sqlite_sequence")
+                    0x0f5b-0x0f67: 0x73716c6974655f73657175656e6365 ("sqlite_sequence")
+                    0x0f68       : 0x03 (3) (root_page index)
+                    0x0f69-0x0f8e: 0x435245415445205441424c452073716c6974655f73657175656e6365286e616d652c73657129 ("CREATE TABLE sqlite_sequence(name,seq)")
+0x1000-8191: Page 1
+    4096-4103: Page Header
+        4096: type (d)
+        4097-4098: first freeblock on page 0x0000 (0)
+        4099-4100: number of cells on page 0x0004 (4)
+        4101-4102: start of content area   0x0fa1 (4001)
+        4103     : number of fragmented free bytes within the cell content area 0x00 (0)
+    8097-41xx: Content Area
+
+
+
+
