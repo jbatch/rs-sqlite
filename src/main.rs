@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{prelude::*, BufReader};
 use std::os::unix::prelude::FileExt;
@@ -139,26 +140,38 @@ pub enum ColumnValue {
 impl ColumnValue {
     fn new(bytes: &Vec<u8>, column_type: &ColumnType, index: usize) -> Result<ColumnValue> {
         let value_length = column_type.len();
+        let end_index = index + value_length as usize;
+        let column_bytes = (index..end_index)
+            .map(|v| bytes[v as usize])
+            .collect::<Vec<u8>>();
 
         match column_type {
             ColumnType::NULL => Ok(ColumnValue::NULL),
-            ColumnType::U8 => Ok(ColumnValue::NULL),
-            ColumnType::U16 => Ok(ColumnValue::NULL),
-            ColumnType::U24 => Ok(ColumnValue::NULL),
-            ColumnType::U32 => Ok(ColumnValue::NULL),
-            ColumnType::U48 => Ok(ColumnValue::NULL),
-            ColumnType::U64 => Ok(ColumnValue::NULL),
-            ColumnType::F64 => Ok(ColumnValue::NULL),
-            ColumnType::ZERO => Ok(ColumnValue::NULL),
-            ColumnType::ONE => Ok(ColumnValue::NULL),
-            ColumnType::BLOB(_) => Ok(ColumnValue::NULL),
-            ColumnType::TEXT(_) => {
-                let end_index = index + value_length as usize;
-                let text_bytes = (index..end_index)
-                    .map(|v| bytes[v as usize])
-                    .collect::<Vec<u8>>();
-                Ok(ColumnValue::TEXT(String::from_utf8(text_bytes)?))
-            }
+            ColumnType::U8 => Ok(ColumnValue::U8(u8::from_be_bytes(
+                column_bytes.try_into().unwrap(),
+            ))),
+            ColumnType::U16 => Ok(ColumnValue::U16(u16::from_be_bytes(
+                column_bytes.try_into().unwrap(),
+            ))),
+            ColumnType::U24 => Ok(ColumnValue::U24(u32::from_be_bytes(
+                column_bytes.try_into().unwrap(),
+            ))),
+            ColumnType::U32 => Ok(ColumnValue::U32(u32::from_be_bytes(
+                column_bytes.try_into().unwrap(),
+            ))),
+            ColumnType::U48 => Ok(ColumnValue::U48(u64::from_be_bytes(
+                column_bytes.try_into().unwrap(),
+            ))),
+            ColumnType::U64 => Ok(ColumnValue::U64(u64::from_be_bytes(
+                column_bytes.try_into().unwrap(),
+            ))),
+            ColumnType::F64 => Ok(ColumnValue::F64(f64::from_be_bytes(
+                column_bytes.try_into().unwrap(),
+            ))),
+            ColumnType::ZERO => Ok(ColumnValue::ZERO),
+            ColumnType::ONE => Ok(ColumnValue::ONE),
+            ColumnType::BLOB(_) => Ok(ColumnValue::BLOB(column_bytes)),
+            ColumnType::TEXT(_) => Ok(ColumnValue::TEXT(String::from_utf8(column_bytes)?)),
         }
     }
 }
@@ -175,7 +188,6 @@ pub struct Cell {
 impl Cell {
     fn new(bytes: &Vec<u8>, cell_pointer: &u16) -> Result<Cell> {
         let mut index = *cell_pointer as usize;
-        println!("creating Cell at index: {:#2x}", index);
 
         let payload_len = bytes[index];
         index += 1;
@@ -278,8 +290,6 @@ impl Page {
             .map(|cell_pointer| Cell::new(bytes, cell_pointer).unwrap())
             .collect();
 
-        println!("Cells {:?}", cells);
-
         Ok(Page {
             page_header: PageHeader {
                 page_type: page_type,
@@ -294,12 +304,7 @@ impl Page {
     }
 }
 
-// pub struct Page {
-//     pub page_header: PageHeader,
-//     pub cell_pointers: Vec<u16>,
-//     pub cells: Vec<Cell>,
-// }
-
+#[derive(Debug)]
 pub struct TableSchema {
     name: String,
     root_page: usize,
@@ -308,29 +313,22 @@ pub struct TableSchema {
 
 impl TableSchema {
     pub fn new(cell: &Cell) -> Result<TableSchema> {
-        println!(
-            "{:?}",
-            (
-                cell.column_values.get(1).unwrap(),
-                cell.column_values.get(3).unwrap(),
-                cell.column_values.get(4).unwrap(),
-            )
-        );
-        if let (ColumnValue::TEXT(name), ColumnValue::NULL, ColumnValue::TEXT(sql)) = (
+        if let (ColumnValue::TEXT(name), ColumnValue::U8(root_page), ColumnValue::TEXT(sql)) = (
             cell.column_values.get(1).unwrap(),
             cell.column_values.get(3).unwrap(),
             cell.column_values.get(4).unwrap(),
         ) {
             return Ok(TableSchema {
                 name: name.to_string(),
-                root_page: 0,
+                root_page: *root_page as usize,
                 sql: sql.to_string(),
             });
         }
-        bail!("invalid cell state");
+        bail!("invalid cell state for table");
     }
 }
 
+#[derive(Debug)]
 pub struct IndexSchema {
     name: String,
     table_name: String,
@@ -338,6 +336,31 @@ pub struct IndexSchema {
     sql: String,
 }
 
+impl IndexSchema {
+    pub fn new(cell: &Cell) -> Result<IndexSchema> {
+        if let (
+            ColumnValue::TEXT(name),
+            ColumnValue::TEXT(table_name),
+            ColumnValue::U8(root_page),
+            ColumnValue::TEXT(sql),
+        ) = (
+            cell.column_values.get(1).unwrap(),
+            cell.column_values.get(2).unwrap(),
+            cell.column_values.get(3).unwrap(),
+            cell.column_values.get(4).unwrap(),
+        ) {
+            return Ok(IndexSchema {
+                name: name.to_string(),
+                table_name: table_name.to_string(),
+                root_page: *root_page as usize,
+                sql: sql.to_string(),
+            });
+        }
+        bail!("invalid cell state for index");
+    }
+}
+
+#[derive(Debug)]
 pub struct SqliteSchema {
     tables: Vec<TableSchema>,
     indexes: Vec<IndexSchema>,
@@ -357,9 +380,21 @@ impl SqliteSchema {
             })
             .map(|cell| TableSchema::new(cell).unwrap())
             .collect();
+        let indexes: Vec<IndexSchema> = root_page
+            .cells
+            .iter()
+            .filter(|cell| {
+                if let ColumnValue::TEXT(t) = cell.column_values.get(0).unwrap() {
+                    t == "index"
+                } else {
+                    false
+                }
+            })
+            .map(|cell| IndexSchema::new(cell).unwrap())
+            .collect();
         Ok(SqliteSchema {
-            tables: vec![],
-            indexes: vec![],
+            tables: tables,
+            indexes: indexes,
         })
     }
 }
@@ -373,26 +408,37 @@ fn main() -> Result<()> {
         _ => {}
     }
 
+    // Build db schema info
+    let mut file = File::open(&args[1])?;
+    let mut header = [0; 100];
+    file.read_exact(&mut header)?;
+
+    // The page size is stored at the 16th byte offset, using 2 bytes in big-endian order
+    let page_size: u16 = u16::from_be_bytes([header[16], header[17]]);
+
+    let mut root_bytes = vec![0u8; (page_size) as usize];
+    file.read_exact_at(&mut root_bytes, 0)?;
+    let root_page = Page::new(&root_bytes)?;
+    let sqlite_schema = SqliteSchema::new(&root_page)?;
+
     // Parse command and act accordingly
     let command = &args[2];
     match command.as_str() {
         ".dbinfo" => {
-            let mut file = File::open(&args[1])?;
-            let mut header = [0; 100];
-            file.read_exact(&mut header)?;
-
-            // The page size is stored at the 16th byte offset, using 2 bytes in big-endian order
-            let page_size: u16 = u16::from_be_bytes([header[16], header[17]]);
-            println!("page_size {}", page_size);
-
-            let mut root_bytes = vec![0u8; (page_size) as usize];
-            file.read_exact_at(&mut root_bytes, 0)?;
-            println!("bytes {:x?}", root_bytes);
-            let root_page = Page::new(&root_bytes)?;
-            let sqlite_schema = SqliteSchema::new(&root_page);
-
-            println!("database page size: {}", page_size);
-            println!("number of tables: {}", root_page.cell_pointers.len())
+            println!("database page size:\t{}", page_size);
+            println!("number of tables:\t{}", sqlite_schema.tables.len());
+            println!("number of indexes:\t{}", sqlite_schema.indexes.len());
+        }
+        ".tables" => {
+            let reserved_table_names = HashSet::from(["sqlite_sequence"]);
+            let table_names = sqlite_schema
+                .tables
+                .iter()
+                .map(|table| table.name.as_str())
+                .filter(|name| !reserved_table_names.contains(name))
+                .collect::<Vec<_>>()
+                .join(" ");
+            println!("{}", table_names);
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
