@@ -1,9 +1,9 @@
+#![allow(dead_code)]
 use anyhow::{bail, Result};
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::{prelude::*};
+use std::io::prelude::*;
 use std::os::unix::prelude::FileExt;
-use std::vec::IntoIter;
 
 #[derive(Debug)]
 pub enum PageType {
@@ -30,42 +30,6 @@ pub struct PageHeader {
     pub number_cells: u16,
     pub content_area_start: u16,
     pub number_fragmented_bytes: u8,
-}
-
-enum SqliteSchemaRecordType {
-    TABLE,
-    INDEX,
-    VIEW,
-    TRIGGER,
-}
-
-impl SqliteSchemaRecordType {
-    pub fn new(s: &str) -> Result<SqliteSchemaRecordType> {
-        match s {
-            "table" => Ok(SqliteSchemaRecordType::TABLE),
-            "index" => Ok(SqliteSchemaRecordType::INDEX),
-            "view" => Ok(SqliteSchemaRecordType::VIEW),
-            "trigger" => Ok(SqliteSchemaRecordType::TRIGGER),
-            _ => bail!(format!("Invalid SqliteSchemaRecordType string")),
-        }
-    }
-}
-
-pub struct SqliteSchemaRecord {
-    record_type: SqliteSchemaRecordType,
-    name: String,
-    table_name: String,
-    root_page: u8,
-    sql: String,
-}
-pub struct SqliteSchemaTable {
-    rows: Vec<SqliteSchemaRecord>,
-}
-
-impl SqliteSchemaTable {
-    fn new(_bytes: &mut IntoIter<u8>) -> Result<SqliteSchemaTable> {
-        Ok(SqliteSchemaTable { rows: vec![] })
-    }
 }
 
 #[derive(Debug)]
@@ -141,9 +105,7 @@ impl ColumnValue {
     fn new(bytes: &Vec<u8>, column_type: &ColumnType, index: usize) -> Result<ColumnValue> {
         let value_length = column_type.len();
         let end_index = index + value_length as usize;
-        let column_bytes = (index..end_index)
-            .map(|v| bytes[v])
-            .collect::<Vec<u8>>();
+        let column_bytes = (index..end_index).map(|v| bytes[v]).collect::<Vec<u8>>();
 
         match column_type {
             ColumnType::NULL => Ok(ColumnValue::NULL),
@@ -392,10 +354,7 @@ impl SqliteSchema {
             })
             .map(|cell| IndexSchema::new(cell).unwrap())
             .collect();
-        Ok(SqliteSchema {
-            tables,
-            indexes,
-        })
+        Ok(SqliteSchema { tables, indexes })
     }
 }
 
