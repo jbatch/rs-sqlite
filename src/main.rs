@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::{prelude::*, BufReader};
+use std::io::{prelude::*};
 use std::os::unix::prelude::FileExt;
 use std::vec::IntoIter;
 
@@ -63,7 +63,7 @@ pub struct SqliteSchemaTable {
 }
 
 impl SqliteSchemaTable {
-    fn new(bytes: &mut IntoIter<u8>) -> Result<SqliteSchemaTable> {
+    fn new(_bytes: &mut IntoIter<u8>) -> Result<SqliteSchemaTable> {
         Ok(SqliteSchemaTable { rows: vec![] })
     }
 }
@@ -103,7 +103,7 @@ impl ColumnType {
         }
     }
 
-    pub fn len(self: &Self) -> u64 {
+    pub fn len(&self) -> u64 {
         match self {
             ColumnType::NULL => 0,
             ColumnType::U8 => 1,
@@ -142,7 +142,7 @@ impl ColumnValue {
         let value_length = column_type.len();
         let end_index = index + value_length as usize;
         let column_bytes = (index..end_index)
-            .map(|v| bytes[v as usize])
+            .map(|v| bytes[v])
             .collect::<Vec<u8>>();
 
         match column_type {
@@ -230,11 +230,11 @@ impl Cell {
         }
 
         Ok(Cell {
-            payload_len: payload_len,
-            rowid: rowid,
-            header_length: header_length,
-            column_values: column_values,
-            body_length: body_length,
+            payload_len,
+            rowid,
+            header_length,
+            column_values,
+            body_length,
         })
     }
 }
@@ -292,14 +292,14 @@ impl Page {
 
         Ok(Page {
             page_header: PageHeader {
-                page_type: page_type,
-                freeblock: freeblock,
-                number_cells: number_cells,
+                page_type,
+                freeblock,
+                number_cells,
                 content_area_start: content_start_area,
-                number_fragmented_bytes: number_fragmented_bytes,
+                number_fragmented_bytes,
             },
-            cell_pointers: cell_pointers,
-            cells: cells,
+            cell_pointers,
+            cells,
         })
     }
 }
@@ -393,8 +393,8 @@ impl SqliteSchema {
             .map(|cell| IndexSchema::new(cell).unwrap())
             .collect();
         Ok(SqliteSchema {
-            tables: tables,
-            indexes: indexes,
+            tables,
+            indexes,
         })
     }
 }
