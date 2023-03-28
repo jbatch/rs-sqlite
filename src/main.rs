@@ -423,7 +423,7 @@ fn main() -> Result<()> {
                 let mut page_bytes = vec![0u8; (page_size) as usize];
                 file.read_exact_at(&mut page_bytes, page_size as u64 * page_index as u64)?;
                 let page = Page::new(&page_bytes, 0)?;
-                println!("{}", page.cells.len());
+                println!("{}", page.page_header.number_cells);
             } else {
                 bail!("Missing or invalid command passed: {}", command)
             }
