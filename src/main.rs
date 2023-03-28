@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use anyhow::{bail, Result};
-use std::collections::HashSet;
+use regex::Regex;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::prelude::*;
 use std::os::unix::prelude::FileExt;
@@ -24,6 +25,7 @@ impl PageType {
         }
     }
 }
+#[derive(Debug)]
 pub struct PageHeader {
     pub page_type: PageType,
     pub freeblock: u16,
@@ -201,6 +203,7 @@ impl Cell {
     }
 }
 
+#[derive(Debug)]
 pub struct Page {
     pub page_header: PageHeader,
     pub cell_pointers: Vec<u16>,
@@ -208,8 +211,8 @@ pub struct Page {
 }
 
 impl Page {
-    pub fn new(bytes: &Vec<u8>) -> Result<Page> {
-        let mut index = 100;
+    pub fn new(bytes: &Vec<u8>, skip_offset: usize) -> Result<Page> {
+        let mut index = skip_offset;
         let page_type = PageType::new(&bytes[index])?;
         index += 1;
 
@@ -377,8 +380,14 @@ fn main() -> Result<()> {
 
     let mut root_bytes = vec![0u8; (page_size) as usize];
     file.read_exact_at(&mut root_bytes, 0)?;
-    let root_page = Page::new(&root_bytes)?;
+    let root_page = Page::new(&root_bytes, 100)?;
     let sqlite_schema = SqliteSchema::new(&root_page)?;
+
+    let tables: HashMap<&str, &TableSchema> = sqlite_schema
+        .tables
+        .iter()
+        .map(|table| (table.name.as_str(), table))
+        .collect();
 
     // Parse command and act accordingly
     let command = &args[2];
@@ -399,7 +408,26 @@ fn main() -> Result<()> {
                 .join(" ");
             println!("{}", table_names);
         }
-        _ => bail!("Missing or invalid command passed: {}", command),
+        _ => {
+            let count_re = Regex::new(r"SELECT COUNT\(\*\) FROM (.+)").unwrap();
+            if count_re.is_match(command) {
+                let table_name = count_re
+                    .captures(command)
+                    .unwrap()
+                    .get(1)
+                    .map_or("", |m| m.as_str());
+                if !tables.contains_key(table_name) {
+                    bail!("Error: in prepare, no such table: appless: {}", table_name);
+                }
+                let page_index = tables.get(table_name).unwrap().root_page - 1;
+                let mut page_bytes = vec![0u8; (page_size) as usize];
+                file.read_exact_at(&mut page_bytes, page_size as u64 * page_index as u64)?;
+                let page = Page::new(&page_bytes, 0)?;
+                println!("{}", page.cells.len());
+            } else {
+                bail!("Missing or invalid command passed: {}", command)
+            }
+        }
     }
 
     Ok(())
