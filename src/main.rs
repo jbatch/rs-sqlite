@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use anyhow::{bail, Result};
 use regex::Regex;
+use std::cell;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::prelude::*;
@@ -181,6 +182,7 @@ impl Cell {
                     break;
                 }
             }
+            println!("{:02x?}", buf);
             let column_type = ColumnType::new(buf)?;
             column_types.push(column_type);
         }
@@ -249,6 +251,7 @@ impl Page {
             .chunks(2)
             .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<u16>>();
+        println!("cell points: {}", cell_pointers.len());
 
         let cells: Vec<Cell> = cell_pointers
             .iter()
