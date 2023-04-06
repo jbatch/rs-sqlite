@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use anyhow::{bail, Result};
 use regex::Regex;
+use std::cell;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::prelude::*;
@@ -107,7 +108,8 @@ impl ColumnValue {
     fn new(bytes: &Vec<u8>, column_type: &ColumnType, index: usize) -> Result<ColumnValue> {
         let value_length = column_type.len();
         let end_index = index + value_length as usize;
-        let column_bytes = (index..end_index).map(|v| bytes[v]).collect::<Vec<u8>>();
+        let mut column_bytes = (index..end_index).map(|v| bytes[v]).collect::<Vec<u8>>();
+        println!("{:?}: 0x{:02x?}", column_type, column_bytes);
 
         match column_type {
             ColumnType::NULL => Ok(ColumnValue::NULL),
@@ -117,15 +119,19 @@ impl ColumnValue {
             ColumnType::U16 => Ok(ColumnValue::U16(u16::from_be_bytes(
                 column_bytes.try_into().unwrap(),
             ))),
-            ColumnType::U24 => Ok(ColumnValue::U24(u32::from_be_bytes(
-                column_bytes.try_into().unwrap(),
-            ))),
+            ColumnType::U24 => {
+                let mut a = vec![0];
+                a.append(&mut column_bytes);
+                Ok(ColumnValue::U24(u32::from_be_bytes(a.try_into().unwrap())))
+            }
             ColumnType::U32 => Ok(ColumnValue::U32(u32::from_be_bytes(
                 column_bytes.try_into().unwrap(),
             ))),
-            ColumnType::U48 => Ok(ColumnValue::U48(u64::from_be_bytes(
-                column_bytes.try_into().unwrap(),
-            ))),
+            ColumnType::U48 => {
+                let mut a = vec![0, 0];
+                a.append(&mut column_bytes);
+                Ok(ColumnValue::U48(u64::from_be_bytes(a.try_into().unwrap())))
+            }
             ColumnType::U64 => Ok(ColumnValue::U64(u64::from_be_bytes(
                 column_bytes.try_into().unwrap(),
             ))),
@@ -181,6 +187,7 @@ impl Cell {
                     break;
                 }
             }
+            println!("{:02x?}", buf);
             let column_type = ColumnType::new(buf)?;
             column_types.push(column_type);
         }
@@ -249,6 +256,7 @@ impl Page {
             .chunks(2)
             .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<u16>>();
+        println!("cell points: {}", cell_pointers.len());
 
         let cells: Vec<Cell> = cell_pointers
             .iter()
